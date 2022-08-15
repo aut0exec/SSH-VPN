@@ -76,11 +76,11 @@ exit_sigs() {
 }
 
 error_msg() {
-	
+
 	local red='\e[1;31m'
 	local  nc='\e[0m'
 	local msg="$1"
-	
+
 	echo -e "${red}ERROR:${nc} $msg"
 }
 
@@ -104,7 +104,7 @@ get_rad_ip() {
 
 	while [ -z $RAD_IP ];
 	do
-		read -p "Please a valid IPv4 address: " ans
+		read -p "Please enter a valid IPv4 address for the RAD: " ans
 		test_ip $ans
 		if [ $? -eq 0 ]; then
 			RAD_IP="$ans"
@@ -142,26 +142,27 @@ get_remote_ifs() {
 }
 
 info_msg() {
-	
+
 	local green='\e[1;32m'
 	local  nc='\e[0m'
 	local msg="$1"
-	
+
 	echo -en "${green}INFO:${nc} $msg"
 }
 
 remote_routes() {
-	
+
 	local action="$1"
 	local ipr_act='del'
 
 	if [ "$action" == 'add' ]; then
 		ipr_act='add'
 	fi
-	
+
 	local oifs=$IFS
 	IFS=$'\n'
 	local net_info=( $(run_ssh_comm "ip -4 -o route show dev $REMOTE_NET_IF") )
+	net_info=( ${net_info[@]/default*/} )
 	IFS="$oifs"
 
 	for ((i=0; i < ${#net_info[@]}; i++))
@@ -172,7 +173,7 @@ remote_routes() {
 	done
 }
 
-run_ssh_comm () {
+run_ssh_comm() {
 
 	local command="$1"
 	ssh -q root@$RAD_IP -i "$RSA_KEY" "$command"
@@ -271,11 +272,11 @@ user_privs() {
 }
 
 warn_msg() {
-	
+
 	local green='\e[1;33m'
 	local  nc='\e[0m'
 	local msg="$1"
-	
+
 	echo -en "${green}WARN:${nc} $msg"
 }
 
