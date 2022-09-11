@@ -222,7 +222,7 @@ test_priv_key() {
 
 	shopt -s nocasematch
 
-	if [[ $(file -b "$1") =~ 'OpenSSH private key' ]]; then
+	if [[ $(file -b "$1") =~ OpenSSH\ private\ key|RSA\ private\ key ]]; then
 		return 0
 	else
 		return 1
