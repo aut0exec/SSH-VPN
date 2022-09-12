@@ -3,7 +3,7 @@
 #  Author: Aut0exec
 #    Date: July 11, 2022
 # Version: 1.0
-# Purpose: Script sets up an SSH tunnel to allow a remote network to be accessible locally
+# Purpose: Script sets up an SSH tunnel to allow remote network(s) to be accessible locally
 #
 #   Reqs: User running script needs to be EUID 0
 #		  sshd_config on remote end needs: PermitTunnel yes
@@ -14,9 +14,6 @@
 #		  Public key needs to be in /root/.ssh/authorized_keys on remote end
 #
 # Issues: Only supports IPv4 currently
-#		  DONE - Need to add support for ssh-agent
-#		  DONE - Need to add support for ssh-add for adding pub keys
-#		  DONE - Add functionality to auto add network route for chosen interface/subnet
 #		  Add ARGV/Getopts support
 #
 
@@ -42,21 +39,51 @@ build_iptables(){
 # Expects RAD_IP and RSA_KEY
 check_tun_conf() {
 
-	local check=$(run_ssh_comm "grep PermitTunnel /etc/ssh/sshd_config")
+	local check=$( run_ssh_comm "grep -E 'PermitTunnel|Match User' /etc/ssh/sshd_config" )
+	local tun_conf_status=0
+	local conf_match_user=0
+	local i=0
 
-	if [[ "${check,,}" =~ (^#|^permittunnel *no) ]]; then
-		error_msg "Tunneling disabled on ${1}!\nEnsure 'PermitTunnel yes' is set in sshd_config."
-		exit 2
-	elif [ -z "$check" ]; then
+	[[ "$check" =~ ([^#]Match .*User) ]] && conf_match_user=1
+
+	OIFS=$IFS
+	IFS=$'\n'
+	check=( $check )
+	IFS=$OIFS
+
+	if [ -z "$check" ]; then
 		error_msg "Unable to read SSHD configuration!"
 		read -n2 -p "Attempt to continue anyways [y/n]? " ANS
 		ANS=${ANS,,}
 		[ ${ANS:0:1} == 'y' ] || exit 1;
-		clear
-	else
-		info_msg "Appears tunneling is available.\n"
+		return
 	fi
 
+	# Check configuration for tunnel ability globally or per user
+	for line in "${check[@]}"
+	do
+		if [[ "${line#[[:blank:]]}" =~ (^PermitTunnel *yes) ]] && [ $conf_match_user -eq 0 ]; then
+			tun_conf_status=1
+			break
+		elif [[ "${line#[[:blank:]]}" =~ (^Match User *) ]] && [ $conf_match_user -eq 1 ] ; then
+			# Strip off 'Match User' line
+			user="${line#M*r }"
+			# Strip off trailing whitespace
+			user="${user%%[[:blank:]]*}"
+			if [ "$user" == 'root' ] && [[ "${check[i+1]#[[:blank:]]}" =~ (^PermitTunnel *yes) ]] ; then
+				tun_conf_status=1
+				break
+			fi
+		fi
+		i=$((i+1))
+	done
+
+	if [ $tun_conf_status -eq 0 ]; then
+		error_msg "Tunneling disabled on ${1}!\nEnsure 'PermitTunnel yes' is set in sshd_config."
+		exit 2
+	fi
+
+	info_msg "Appears tunneling is available.\n"
 	return 0
 }
 
@@ -189,7 +216,6 @@ ssh_load_key() {
 ssh_spawn_tun() {
 
 	ssh -q -o Tunnel=ethernet -o ExitOnForwardFailure=yes -f -w 7:7 root@$RAD_IP -i "$RSA_KEY" true
-	#~ ssh -q -o ExitOnForwardFailure=yes -f -w 7:7 root@$RAD_IP -i "$RSA_KEY" true
 	TUN_PID=$(pgrep -f "${RAD_IP}.*${RSA_KEY}")
 	[ ! -z $TUN_PID ] || return 1
 }
