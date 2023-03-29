@@ -87,14 +87,6 @@ check_tun_conf() {
 	return 0
 }
 
-command_check() {
-
-	for (( i = 0; i < ${#COMMANDS[@]}; i++ ))
-	do
-		command -v "${COMMANDS[i]}" > /dev/null 2>&1 || { error_msg "$PROGNAME requires the utility ${COMMANDS[i]} but it could not be found! \n\r"; exit 1; }
-	done
-}
-
 exit_sigs() {
 
 	echo -e "\nExiting..."
@@ -177,6 +169,40 @@ info_msg() {
 	echo -en "${green}INFO:${nc} $msg"
 }
 
+local_comm_check() {
+	
+	local base_commands=( ssh ssh-agent ssh-add file pgrep )
+	for (( i = 0; i < ${#base_commands[@]}; i++ ))
+	do
+		command -v "${base_commands[i]}" > /dev/null 2>&1 || { error_msg "$PROGNAME requires the utility ${base_commands[i]} but it could not be found! \n\r"; exit 1; }
+	done
+}
+
+local_int_comm_check() {
+
+	if $(command -v "ip" > /dev/null 2>&1); then 
+		echo 'ip'
+	elif $(command -v "ifconfig" > /dev/null 2>&1) ; then 
+		echo 'ifconfig'
+	else 
+		return 1
+	fi
+}
+
+remote_command_check() {
+	
+	local ifconfig_avail=0
+	local ip_avail=0
+	
+	run_ssh_comm "command -v \"ifconfig\" > /dev/null 2>&1" || ifconfig_avail=1 
+	run_ssh_comm "command -v \"ip\" > /dev/null 2>&1" ||  ip_avail=1
+
+	if [ $ifconfig_avail -eq 1 ] && [ $ip_avail -eq 1 ]; then { return 1; }
+	elif [ $ip_avail -eq 0 ]; then { echo 'ip'; }
+	elif [ $ifconfig_avail -eq 0 ]; then { echo 'ifconfig'; }
+	fi
+}
+
 remote_routes() {
 
 	local action="$1"
@@ -203,7 +229,7 @@ remote_routes() {
 run_ssh_comm() {
 
 	local command="$1"
-	ssh -q root@$RAD_IP -i "$RSA_KEY" "$command"
+	ssh -q root@$RAD_IP -i "$RSA_KEY" "PATH=$PATH $command"
 }
 
 ssh_load_key() {
@@ -221,10 +247,13 @@ ssh_spawn_tun() {
 }
 
 ssh_kill_tun() {
+	
 	local remove_ipt_cmd=$(build_iptables)
+	
 	info_msg "Removing remote iptables entries: "
 	run_ssh_comm "$remove_ipt_cmd"
 	[ $? -eq 0 ] && echo "Done." || echo "ERROR!"
+	
 	info_msg "Removing ssh tunnel and agent sessions: "
 	kill $TUN_PID && $(ssh-agent -k)
 	[ $? -eq 0 ] && echo "Done." || echo "ERROR!"
@@ -314,10 +343,9 @@ umask 0027
 
 PATH='/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin'
 PROGNAME=$(basename "$0")
-COMMANDS=( ssh ssh-agent ssh-add file pgrep ifconfig ip )
 declare -a REM_INFS
 
-# Interface that is connected to remote network of interest
+# REMOTE_NET_IF is the interface that is connected to remote network of interest
 REMOTE_NET_IF=''
 TAP_IF='tap7'
 RAD_IP=''
@@ -328,10 +356,13 @@ RSA_KEY=''
 LOCAL_TUN_IP='198.18.0.1'
 REMOTE_TUN_IP='198.18.0.2'
 TUN_NETMASK='255.255.255.252'
+TUN_CIDR='/30'
 TUN_PID=''
 
 user_privs
-command_check
+local_comm_check
+
+LOCAL_INT_COMMAND=$(local_int_comm_check) || { error_msg "$PROGNAME requires ifconfig or ip tool locally. Neither could not be found! \n\r" && exit 1; }
 
 if [ ! -z "$RSA_KEY" ]; then
 	test_priv_key "$RSA_KEY" || { unset RSA_KEY; error_msg "Invalid Private key!\n" && get_priv_key; }
@@ -349,6 +380,10 @@ fi
 
 info_msg "Checking configuration on remote end.\n"
 check_tun_conf $RAD_IP "$RSA_KEY"
+
+info_msg "Checking remote end for ip or ifconfig utilities.\n"
+REMOTE_INT_COMMAND=$(remote_command_check) || { error_msg "$PROGNAME requires ifconfig or ip tool on the remote system. Neither could not be found! \n\r" && exit 2; }
+
 get_remote_ifs
 
 if [ ! -z "$REMOTE_NET_IF" ]; then
@@ -362,14 +397,30 @@ ssh_spawn_tun
 if [ $? -eq 0 ]; then
 	info_msg "Configuring tunnel for IP based communication.\n"
 
-	ifconfig $TAP_IF $LOCAL_TUN_IP netmask $TUN_NETMASK || { error_msg "Failed to assign $TAP_IF address of $LOCAL_TUN_IP."; exit_sigs; }
-	rem_ifconfig="ifconfig $TAP_IF $REMOTE_TUN_IP netmask $TUN_NETMASK"
+	if [ "$REMOTE_INT_COMMAND" == "ifconfig" ]; then
+	
+		rem_ifconfig="ifconfig $TAP_IF $REMOTE_TUN_IP netmask $TUN_NETMASK"
+		rem_ifconfig="${rem_ifconfig} && ifconfig $TAP_IF up"
+		
+	elif [ "$REMOTE_INT_COMMAND" == "ip" ]; then
+		
+		rem_ifconfig="ip addr add ${REMOTE_TUN_IP}${TUN_CIDR} dev $TAP_IF"
+		rem_ifconfig="${rem_ifconfig} && ip link set $TAP_IF up"
 
+	fi
+	
+	if [ "$LOCAL_INT_COMMAND" == "ifconfig" ]; then
+		ifconfig $TAP_IF $LOCAL_TUN_IP netmask $TUN_NETMASK && ifconfig $TAP_IF up || { error_msg "Failed to assign $TAP_IF address of $LOCAL_TUN_IP."; exit_sigs; }
 
+	elif [ "$LOCAL_INT_COMMAND" == "ip" ]; then
+		ip addr add ${LOCAL_TUN_IP}${TUN_CIDR} dev $TAP_IF && ip link set $TAP_IF up || { error_msg "Failed to assign $TAP_IF address of $LOCAL_TUN_IP."; exit_sigs; }
+	fi
+	
 	rem_forward_rules=$(build_iptables "add")
 	run_ssh_comm "${rem_ifconfig} && ${rem_forward_rules}" || { error_msg "Issue setting up forwarding on the remote end."; exit_sigs ;}
 	remote_routes "add"
 
+	
 	info_msg "Tunnel appears to be available; PID - $TUN_PID.\n\n"
 	warn_msg "Make sure to add additional routes locally for remote networks as needed!"
 	echo -e "Syntax would be similar to:\n\r\tip route add <REMOTE_NETWORK> dev $TAP_IF via $REMOTE_TUN_IP"
