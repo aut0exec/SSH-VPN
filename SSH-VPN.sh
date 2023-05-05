@@ -328,11 +328,11 @@ user_privs() {
 
 warn_msg() {
 
-	local green='\e[1;33m'
+	local yellow='\e[1;33m'
 	local  nc='\e[0m'
 	local msg="$1"
 
-	echo -en "${green}WARN:${nc} $msg"
+	echo -en "${yellow}WARN:${nc} $msg"
 }
 
 ##################### Main ########################
