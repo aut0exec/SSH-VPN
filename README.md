@@ -13,4 +13,4 @@ Simple tool to automate the creation of an SSH tunnel for VPN-like purposes.
 
 ## To-Do
 
-1. Add support for passing parameters via the command line
+1. Allow for auxiliary SSH options to be passed to program

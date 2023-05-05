@@ -250,7 +250,7 @@ remote_routes() {
 run_ssh_comm() {
 
 	local command="$1"
-	ssh -q root@$RAD_IP -i "$RSA_KEY" "PATH=$PATH $command"
+	ssh -q root@$RAD_IP -i "$RSA_KEY" -p "RAD_SSH_PORT" "PATH=$PATH $command"
 }
 
 ssh_load_key() {
@@ -262,7 +262,7 @@ ssh_load_key() {
 
 ssh_spawn_tun() {
 
-	ssh -q -o Tunnel=ethernet -o ExitOnForwardFailure=yes -f -w 7:7 root@$RAD_IP -i "$RSA_KEY" true
+	ssh -q -o Tunnel=ethernet -o ExitOnForwardFailure=yes -f -w 7:7 root@$RAD_IP -i "$RSA_KEY" -p "RAD_SSH_PORT" $true
 	TUN_PID=$(pgrep -f "${RAD_IP}.*${RSA_KEY}")
 	[ ! -z $TUN_PID ] || return 1
 }
