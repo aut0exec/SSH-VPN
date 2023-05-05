@@ -103,6 +103,27 @@ error_msg() {
 	echo -e "${red}ERROR:${nc} $msg"
 }
 
+get_args() {
+
+	args=$(getopt -a -n "$PROGNAME" -o i:p:r:vh -l id:,rport:,rhost:,verbose,help -- "$@")
+	args_valid=$?
+	if [ $args_valid != "0" ]; then usage; exit 1; fi
+
+	eval set -- "$args"
+
+	while true
+	do
+		case "$1" in
+			-h|--help)	usage				; exit 0;;
+			-i|--id)	RSA_KEY="$2"		; shift 2;;
+			-p|--rport)	RAD_SSH_PORT="$2"	; shift 2;;
+			-r|--rhost)	RAD_IP="$2"			; shift 2;;
+			--)	shift; break;;
+			*) usage ;;
+		esac
+	done
+}
+
 get_priv_key() {
 
 	while [ -z $RSA_KEY ];
@@ -312,7 +333,11 @@ try_again() {
 
 usage() {
 
-    echo -e "Usage: $PROGNAME "
+    echo -e "Usage: $PROGNAME [ Options ]"
+    echo -e "  -h, --help\t\tDisplay this information"
+    echo -e "  -i, --id\t\tIdentity (private key) file for ssh"
+    echo -e "  -p, --rport\t\tRemote port for SSH (default 22)"
+    echo -e "  -r, --rhost\t\tRemote host to connect via SSH"
 
 	exit 99
 }
@@ -349,6 +374,7 @@ declare -a REM_INFS
 REMOTE_NET_IF=''
 TAP_IF='tap7'
 RAD_IP=''
+RAD_SSH_PORT='22'
 RSA_KEY=''
 
 # Use RFC 5735 space to avoid conflicts
@@ -359,6 +385,7 @@ TUN_NETMASK='255.255.255.252'
 TUN_CIDR='/30'
 TUN_PID=''
 
+get_args "$@"
 user_privs
 local_comm_check
 
