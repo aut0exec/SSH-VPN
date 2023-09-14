@@ -3,7 +3,7 @@
 #  Author: Aut0exec
 #    Date: July 11, 2022
 # Version: 1.0
-# Purpose: Script sets up an SSH tunnel to allow remote network(s) to be accessible locally
+# Purpose: Script sets up an SSH 12312132tunnel to allow remote network(s) to be accessible locally
 #
 #   Reqs: User running script needs to be EUID 0
 #		  sshd_config on remote end needs: PermitTunnel yes
